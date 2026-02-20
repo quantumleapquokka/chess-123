@@ -61,6 +61,71 @@ void Chess::FENtoBoard(const std::string& fen) {
     // 3: castling availability (KQkq or -)
     // 4: en passant target square (in algebraic notation, or -)
     // 5: halfmove clock (number of halfmoves since the last capture or pawn advance)
+    _grid->forEachSquare([](ChessSquare* square, int x, int y) {
+        square->destroyBit();
+    });
+
+    size_t pos = fen.find(" ");
+    std::string placement = fen;
+
+    if (pos != std::string::npos) {
+        placement = fen.substr(0, pos);
+    }
+
+    int x = 0;
+    int rankIndex = 0;
+
+    for (char c: placement) {
+        if(c == '/') {
+            rankIndex += 1;
+            x = 0;
+            continue;
+        }
+
+        if (c >= '1' && c <= '8') {
+            x = x + (c - '0');
+            continue;
+        }
+
+        int color = (std::isupper(static_cast<unsigned char>(c)) ? 1 : 0);
+
+        char t = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+
+            ChessPiece piece;
+            switch (t) {
+            case 'p': piece = Pawn;   break;
+            case 'n': piece = Knight; break;
+            case 'b': piece = Bishop; break;
+            case 'r': piece = Rook;   break;
+            case 'q': piece = Queen;  break;
+            case 'k': piece = King;   break;
+            default:
+                continue;
+        }
+
+        Bit* bit = PieceForPlayer(color, piece);
+
+        int pieceIndex = 0;
+        switch (piece) {
+            case Pawn:   pieceIndex = 1; break;
+            case Knight: pieceIndex = 2; break;
+            case Bishop: pieceIndex = 3; break;
+            case Rook:   pieceIndex = 4; break;
+            case Queen:  pieceIndex = 5; break;
+            case King:   pieceIndex = 6; break;
+            default:     pieceIndex = 0; break;
+        }
+
+        int tag = (color == 0 ? 0 : 128) + pieceIndex;
+        bit->setGameTag(tag);
+
+        ChessSquare* sq = _grid->getSquare(x, rankIndex);
+        sq->setBit(bit);                 // attaches to holder
+        bit->setParent(sq);              // redundant but safe
+        bit->setPosition(sq->getPosition());
+
+        x += 1;
+    }
 }
 
 bool Chess::actionForEmptyHolder(BitHolder &holder)
