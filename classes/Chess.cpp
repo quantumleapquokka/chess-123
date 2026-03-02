@@ -1,6 +1,107 @@
 #include "Chess.h"
+#include "Bitboard.h"
 #include <limits>
 #include <cmath>
+#include <array>
+#include <cstdint>
+
+namespace {
+    inline int sqIndex(int x, int y) {
+        return (7 - y) * 8 + x;
+    }
+
+    inline bool inBounds(int x, int y) {
+        return x >= 0 && x < 8 && y >= 0 && y < 8;
+    }
+
+    inline bool findHolderXY(Grid* grid, BitHolder* h, int& outX, int& outY) {
+        for (int y = 0; y < 8; y++) {
+            for (int x = 0; x < 8; x++) {
+                if (grid->getSquare(x, y) == h) {
+                    outX = x;
+                    outY = y;
+                    return true;
+                }
+            }
+        }
+        
+        return false;
+    }
+
+    inline void buildOccupancy(Grid* grid, uint64_t& occ0, uint64_t& occ128) {
+        occ0 = 0;
+        occ128 = 0;
+        for (int y = 0; y < 8; y++) {
+            for (int x = 0; x < 8; x++) {
+                auto sq = grid->getSquare(x, y);
+                Bit* b = sq ? sq->bit() : nullptr;
+                if (!b) continue;
+
+                uint64_t mask = 1ULL << sqIndex(x, y);
+                if ((b->gameTag() & 128) == 0) occ0 |= mask;
+                else                           occ128 |= mask;
+            }
+        }
+    }
+
+    inline std::array<uint64_t, 64>& knightAttacks() {
+        static std::array<uint64_t, 64> table{};
+        static bool init = false;
+        if (!init) {
+            init = true;
+            for (int y = 0; y < 8; y++) {
+                for (int x = 0; x < 8; x++) {
+                    uint64_t bb = 0;
+                    const int dx[8] = { 1, 2, 2, 1, -1, -2, -2, -1 };
+                    const int dy[8] = { 2, 1, -1, -2, -2, -1, 1, 2 };
+                    for (int i = 0; i < 8; i++) {
+                        int nx = x + dx[i];
+                        int ny = y + dy[i];
+                        if (inBounds(nx, ny)) bb |= 1ULL << sqIndex(nx, ny);
+                    }
+                    table[sqIndex(x, y)] = bb;
+                }
+            }
+        }
+        return table;
+    }
+
+    inline std::array<uint64_t, 64>& kingAttacks() {
+        static std::array<uint64_t, 64> table{};
+        static bool init = false;
+        if (!init) {
+            init = true;
+            for (int y = 0; y < 8; y++) {
+                for (int x = 0; x < 8; x++) {
+                    uint64_t bb = 0;
+                    for (int oy = -1; oy <= 1; oy++) {
+                        for (int ox = -1; ox <= 1; ox++) {
+                            if (ox == 0 && oy == 0) continue;
+                            int nx = x + ox;
+                            int ny = y + oy;
+                            if (inBounds(nx, ny)) bb |= 1ULL << sqIndex(nx, ny);
+                        }
+                    }
+                    table[sqIndex(x, y)] = bb;
+                }
+            }
+        }
+        return table;
+    }
+
+    inline ChessPiece pieceFromTag(int tag) {
+        int idx = tag & 0x7F;
+        switch (idx) {
+            case 1: return Pawn;
+            case 2: return Knight;
+            case 6: return King;
+            case 3: return Bishop;
+            case 4: return Rook;
+            case 5: return Queen;
+            default: return NoPiece;
+        }
+    }
+}
 
 Chess::Chess()
 {
@@ -49,6 +150,10 @@ void Chess::setUpBoard()
     FENtoBoard("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR");
 
     startGame();
+
+    BitMove moves[256];
+    int n = moveGenerator(moves, 256);
+    (void)n;
 }
 
 void Chess::FENtoBoard(const std::string& fen) {
@@ -144,7 +249,76 @@ bool Chess::canBitMoveFrom(Bit &bit, BitHolder &src)
 
 bool Chess::canBitMoveFromTo(Bit &bit, BitHolder &src, BitHolder &dst)
 {
-    return true;
+    if (!canBitMoveFrom(bit, src)) return false;
+
+    int sx, sy, dx, dy;
+    if (!findHolderXY(_grid, &src, sx, sy)) return false;
+    if (!findHolderXY(_grid, &dst, dx, dy)) return false;
+
+    ChessPiece p = pieceFromTag(bit.gameTag());
+    if (p != Pawn && p != Knight && p != King) {
+        return false;
+    }
+
+    // Occupancy
+    uint64_t occ0, occ128;
+    buildOccupancy(_grid, occ0, occ128);
+
+    const int colorBit = (bit.gameTag() & 128);
+    const uint64_t friendlyOcc = (colorBit == 0) ? occ0 : occ128;
+    const uint64_t enemyOcc    = (colorBit == 0) ? occ128 : occ0;
+
+
+    {
+        Bit* dstBit = dst.bit();
+        if (dstBit && ((dstBit->gameTag() & 128) == colorBit)) return false;
+    }
+
+    // Knight
+    if (p == Knight) {
+        uint64_t attacks = knightAttacks()[sqIndex(sx, sy)];
+        attacks &= ~friendlyOcc;
+
+        uint64_t targetMask = 1ULL << sqIndex(dx, dy);
+        return (attacks & targetMask) != 0;
+    }
+
+    // King
+    if (p == King) {
+        uint64_t attacks = kingAttacks()[sqIndex(sx, sy)];
+        attacks &= ~friendlyOcc;
+
+        uint64_t targetMask = 1ULL << sqIndex(dx, dy);
+        return (attacks & targetMask) != 0;
+    }
+
+    // Pawn
+    if (p == Pawn) {
+        int dir = (colorBit == 128) ? -1 : +1;
+
+        if (dx == sx && dy == sy + dir) {
+            return dst.bit() == nullptr;
+        }
+
+        const int startRank = (colorBit == 128) ? 6 : 1;
+        if (sx == dx && sy == startRank && dy == sy + 2 * dir) {
+            int midY = sy + dir;
+            auto midSq = _grid->getSquare(sx, midY);
+            if (!midSq) return false;
+            if (midSq->bit() != nullptr) return false;
+            return dst.bit() == nullptr;
+        }
+
+        if (dy == sy + dir && (dx == sx - 1 || dx == sx + 1)) {
+            Bit* dstBit = dst.bit();
+            if (!dstBit) return false;
+            return ((dstBit->gameTag() & 128) != colorBit);
+        }
+
+        return false;
+    }
+
+    return false;
 }
 
 void Chess::stopGame()
@@ -203,4 +377,101 @@ void Chess::setStateString(const std::string &s)
             square->setBit(nullptr);
         }
     });
+}
+
+int Chess::moveGenerator(BitMove* out, int maxMoves) {
+    int count = 0;
+
+    const int sideBit = getCurrentPlayer()->playerNumber() * 128;
+
+    uint64_t occ0, occ128;
+    buildOccupancy(_grid, occ0, occ128);
+
+    const uint64_t friendlyOcc = (sideBit == 0) ? occ0 : occ128;
+
+    auto pushMove = [&](int fromX, int fromY, int toX, int toY, ChessPiece piece) {
+        if (count >= maxMoves) return;
+
+        int from = sqIndex(fromX, fromY);
+        int to   = sqIndex(toX, toY);
+
+        out[count++] = BitMove(from, to, piece);
+    };
+
+    int dir = (sideBit == 128) ? -1 : +1;
+    int startRank = (sideBit == 128) ? 6 : 1;
+
+    for (int y = 0; y < 8; y++) {
+        for (int x = 0; x < 8; x++) {
+            ChessSquare* sq = _grid->getSquare(x, y);
+            if (!sq || !sq->bit()) continue;
+
+            Bit* b = sq->bit();
+            if ((b->gameTag() & 128) != sideBit) continue;
+
+            ChessPiece p = pieceFromTag(b->gameTag());
+            if (p != Pawn) continue;
+
+            int fy = y + dir;
+            if (inBounds(x, fy)) {
+                ChessSquare* fwd = _grid->getSquare(x, fy);
+                if (fwd && fwd->bit() == nullptr) {
+                    pushMove(x, y, x, fy, Pawn);
+
+                    if (y == startRank) {
+                        int fy2 = y + 2 * dir;
+                        if (inBounds(x, fy2)) {
+                            ChessSquare* fwd2 = _grid->getSquare(x, fy2);
+                            if (fwd2 && fwd2->bit() == nullptr) {
+                                pushMove(x, y, x, fy2, Pawn);
+                            }
+                        }
+                    }
+                }
+            }
+
+            int cy = y + dir;
+            if (inBounds(x - 1, cy)) {
+                ChessSquare* cap = _grid->getSquare(x - 1, cy);
+                if (cap && cap->bit() && ((cap->bit()->gameTag() & 128) != sideBit)) {
+                    pushMove(x, y, x - 1, cy, Pawn);
+                }
+            }
+            if (inBounds(x + 1, cy)) {
+                ChessSquare* cap = _grid->getSquare(x + 1, cy);
+                if (cap && cap->bit() && ((cap->bit()->gameTag() & 128) != sideBit)) {
+                    pushMove(x, y, x + 1, cy, Pawn);
+                }
+            }
+        }
+    }
+
+    for (int y = 0; y < 8; y++) {
+        for (int x = 0; x < 8; x++) {
+            ChessSquare* sq = _grid->getSquare(x, y);
+            if (!sq || !sq->bit()) continue;
+
+            Bit* b = sq->bit();
+            if ((b->gameTag() & 128) != sideBit) continue;
+
+            ChessPiece p = pieceFromTag(b->gameTag());
+            if (p != Knight) continue;
+
+            uint64_t attacks = knightAttacks()[sqIndex(x, y)];
+            attacks &= ~friendlyOcc; 
+
+            BitboardElement elem(attacks);
+            elem.forEachBit([&](int toIdx) {
+                if (count >= maxMoves) return;
+
+                int tx = toIdx % 8;
+                int rank = toIdx / 8; 
+                int ty = 7 - rank;  
+
+                out[count++] = BitMove(sqIndex(x, y), toIdx, Knight);
+            });
+        }
+    }
+
+    return count;
 }

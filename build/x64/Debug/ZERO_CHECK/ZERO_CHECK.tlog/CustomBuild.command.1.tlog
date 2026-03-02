@@ -1,0 +1,10 @@
+^C:\USERS\SAMMIE\DOCUMENTS\CHESS-123\BUILD\CMAKEFILES\0A53DB5B3AC6DF807D26716E061C6EF4\GENERATE.STAMP.RULE
+setlocal
+"C:\Program Files\Microsoft Visual Studio\2022\Community\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe" -SC:/Users/Sammie/Documents/chess-123 -BC:/Users/Sammie/Documents/chess-123/build --check-stamp-list CMakeFiles/generate.stamp.list --vs-solution-file C:/Users/Sammie/Documents/chess-123/build/tictactoe.sln
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd

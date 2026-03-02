@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Site BuildName="Win32-MSBuild"
+	BuildStamp="20260301-0802-Experimental"
+	Name="DESKTOP-VRJV10V"
+	Generator="ctest-3.31.6-msvc6"
+	CompilerName="C:/Program Files/Microsoft Visual Studio/2022/Community/VC/Tools/MSVC/14.44.35207/bin/Hostx64/x64/cl.exe"
+	CompilerVersion="19.44.35222.0"
+	OSName="Windows"
+	Hostname="DESKTOP-VRJV10V"
+	OSRelease=" Professional"
+	OSVersion=" (Build 26200)"
+	OSPlatform="AMD64"
+	Is64Bits="1"
+	VendorString="AuthenticAMD"
+	VendorID="Advanced Micro Devices"
+	FamilyID="15"
+	ModelID="4"
+	ModelName="AMD Ryzen 9 9900X 12-Core Processor            "
+	ProcessorCacheSize="80"
+	NumberOfLogicalCPU="24"
+	NumberOfPhysicalCPU="12"
+	TotalVirtualMemory="36920"
+	TotalPhysicalMemory="31800"
+	LogicalProcessorsPerPhysical="2"
+	ProcessorClockFrequency="4391"
+	>
+	<Testing>
+		<StartDateTime>Mar 01 15:39 Pacific Standard Time</StartDateTime>
+		<StartTestTime>1772408388</StartTestTime>
+		<TestList/>
+		<EndDateTime>Mar 01 15:39 Pacific Standard Time</EndDateTime>
+		<EndTestTime>1772408388</EndTestTime>
+		<ElapsedMinutes>0</ElapsedMinutes>
+	</Testing>
+</Site>
