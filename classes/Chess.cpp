@@ -4,6 +4,7 @@
 #include <cmath>
 #include <array>
 #include <cstdint>
+#include <vector>
 
 namespace {
     inline int sqIndex(int x, int y) {
@@ -151,8 +152,8 @@ void Chess::setUpBoard()
 
     startGame();
 
-    BitMove moves[256];
-    int n = moveGenerator(moves, 256);
+    std::vector<BitMove> moves = generateAllMoves();
+    int n = static_cast<int>(moves.size());
     (void)n;
 }
 
@@ -256,9 +257,6 @@ bool Chess::canBitMoveFromTo(Bit &bit, BitHolder &src, BitHolder &dst)
     if (!findHolderXY(_grid, &dst, dx, dy)) return false;
 
     ChessPiece p = pieceFromTag(bit.gameTag());
-    if (p != Pawn && p != Knight && p != King) {
-        return false;
-    }
 
     // Occupancy
     uint64_t occ0, occ128;
@@ -313,6 +311,114 @@ bool Chess::canBitMoveFromTo(Bit &bit, BitHolder &src, BitHolder &dst)
             Bit* dstBit = dst.bit();
             if (!dstBit) return false;
             return ((dstBit->gameTag() & 128) != colorBit);
+        }
+
+        return false;
+    }
+
+    // Rook
+    if (p == Rook) {
+        if (sx != dx && sy != dy) return false;
+        if (sx == dx && sy == dy) return false;
+
+        int X = 0;
+        int Y = 0;
+
+        if (dx > sx) X = 1;
+        if (dx < sx) X = -1;
+        if (dy > sy) Y = 1;
+        if (dy < sy) Y = -1;
+
+        int wX = sx + X;
+        int wY = sy + Y;
+
+        while (wX != dx || wY != dy) {
+            auto sq = _grid->getSquare(wX, wY);
+            if (!sq) return false;
+            
+            if (sq->bit() != nullptr) return false;
+
+            wX += X;
+            wY += Y;
+        }
+        return true;
+    }
+
+    // Bishop
+    if (p == Bishop) {
+        int diffX = dx - sx;
+        int diffY = dy - sy;
+
+        if (abs(diffX) != abs(diffY)) return false;
+        if (diffX == 0) return false;
+
+        int X = (diffX > 0) ? 1 : -1;
+        int Y = (diffY > 0) ? 1 : -1;
+
+        int x = sx + X;
+        int y = sy + Y;
+
+        while (x != dx || y != dy) {
+            auto sq = _grid->getSquare(x, y);
+            if (!sq) return false;
+
+            if (sq->bit() != nullptr) return false;
+
+            x += X;
+            y += Y;
+        }
+
+        return true;
+    }
+
+    // Queen
+    if (p == Queen) {
+        int diffX = dx - sx;
+        int diffY = dy - sy;
+
+        if (sx == dx || sy == dy) {
+            if (sx == dx && sy == dy) return false;
+
+            int X = 0;
+            int Y = 0;
+
+            if (dx > sx) X = 1;
+            if (dx < sx) X = -1;
+            if (dy > sy) Y = 1;
+            if (dy < sy) Y = -1;
+
+            int wX = sx + X;
+            int wY = sy + Y;
+
+            while (wX != dx || wY != dy) {
+                auto sq = _grid->getSquare(wX, wY);
+                if (!sq) return false;
+                
+                if (sq->bit() != nullptr) return false;
+
+                wX += X;
+                wY += Y;
+            }
+            return true;
+        }
+
+        if (abs(diffX) == abs(diffY)) {
+            int X = (diffX > 0) ? 1 : -1;
+            int Y = (diffY > 0) ? 1 : -1;
+
+            int x = sx + X;
+            int y = sy + Y;
+
+            while (x != dx || y != dy) {
+                auto sq = _grid->getSquare(x, y);
+                if (!sq) return false;
+                if (sq->bit() != nullptr) return false;
+
+                x += X;
+                y += Y;
+            }
+
+            return true;
         }
 
         return false;
@@ -379,98 +485,49 @@ void Chess::setStateString(const std::string &s)
     });
 }
 
-int Chess::moveGenerator(BitMove* out, int maxMoves) {
-    int count = 0;
+std::vector<BitMove> Chess::generateAllMoves()
+{
+    std::vector<BitMove> moves;
 
-    const int sideBit = getCurrentPlayer()->playerNumber() * 128;
+    for (int sy = 0; sy < 8; sy++) {
+        for (int sx = 0; sx < 8; sx++) {
+            ChessSquare* src = _grid->getSquare(sx, sy);
+            if (!src) continue;
 
-    uint64_t occ0, occ128;
-    buildOccupancy(_grid, occ0, occ128);
+            Bit* bit = src->bit();
+            if (!bit) continue;
 
-    const uint64_t friendlyOcc = (sideBit == 0) ? occ0 : occ128;
+            if (!canBitMoveFrom(*bit, *src)) continue;
 
-    auto pushMove = [&](int fromX, int fromY, int toX, int toY, ChessPiece piece) {
-        if (count >= maxMoves) return;
+            ChessPiece piece = pieceFromTag(bit->gameTag());
 
-        int from = sqIndex(fromX, fromY);
-        int to   = sqIndex(toX, toY);
+            for (int dy = 0; dy < 8; dy++) {
+                for (int dx = 0; dx < 8; dx++) {
+                    ChessSquare* dst = _grid->getSquare(dx, dy);
+                    if (!dst) continue;
 
-        out[count++] = BitMove(from, to, piece);
-    };
-
-    int dir = (sideBit == 128) ? -1 : +1;
-    int startRank = (sideBit == 128) ? 6 : 1;
-
-    for (int y = 0; y < 8; y++) {
-        for (int x = 0; x < 8; x++) {
-            ChessSquare* sq = _grid->getSquare(x, y);
-            if (!sq || !sq->bit()) continue;
-
-            Bit* b = sq->bit();
-            if ((b->gameTag() & 128) != sideBit) continue;
-
-            ChessPiece p = pieceFromTag(b->gameTag());
-            if (p != Pawn) continue;
-
-            int fy = y + dir;
-            if (inBounds(x, fy)) {
-                ChessSquare* fwd = _grid->getSquare(x, fy);
-                if (fwd && fwd->bit() == nullptr) {
-                    pushMove(x, y, x, fy, Pawn);
-
-                    if (y == startRank) {
-                        int fy2 = y + 2 * dir;
-                        if (inBounds(x, fy2)) {
-                            ChessSquare* fwd2 = _grid->getSquare(x, fy2);
-                            if (fwd2 && fwd2->bit() == nullptr) {
-                                pushMove(x, y, x, fy2, Pawn);
-                            }
-                        }
+                    if (canBitMoveFromTo(*bit, *src, *dst)) {
+                        int from = sqIndex(sx, sy);
+                        int to   = sqIndex(dx, dy);
+                        moves.push_back(BitMove(from, to, piece));
                     }
-                }
-            }
-
-            int cy = y + dir;
-            if (inBounds(x - 1, cy)) {
-                ChessSquare* cap = _grid->getSquare(x - 1, cy);
-                if (cap && cap->bit() && ((cap->bit()->gameTag() & 128) != sideBit)) {
-                    pushMove(x, y, x - 1, cy, Pawn);
-                }
-            }
-            if (inBounds(x + 1, cy)) {
-                ChessSquare* cap = _grid->getSquare(x + 1, cy);
-                if (cap && cap->bit() && ((cap->bit()->gameTag() & 128) != sideBit)) {
-                    pushMove(x, y, x + 1, cy, Pawn);
                 }
             }
         }
     }
 
-    for (int y = 0; y < 8; y++) {
-        for (int x = 0; x < 8; x++) {
-            ChessSquare* sq = _grid->getSquare(x, y);
-            if (!sq || !sq->bit()) continue;
+    return moves;
+}
 
-            Bit* b = sq->bit();
-            if ((b->gameTag() & 128) != sideBit) continue;
+int Chess::moveGenerator(BitMove* out, int maxMoves)
+{
+    std::vector<BitMove> moves = generateAllMoves();
 
-            ChessPiece p = pieceFromTag(b->gameTag());
-            if (p != Knight) continue;
+    int count = static_cast<int>(moves.size());
+    if (count > maxMoves) count = maxMoves;
 
-            uint64_t attacks = knightAttacks()[sqIndex(x, y)];
-            attacks &= ~friendlyOcc; 
-
-            BitboardElement elem(attacks);
-            elem.forEachBit([&](int toIdx) {
-                if (count >= maxMoves) return;
-
-                int tx = toIdx % 8;
-                int rank = toIdx / 8; 
-                int ty = 7 - rank;  
-
-                out[count++] = BitMove(sqIndex(x, y), toIdx, Knight);
-            });
-        }
+    for (int i = 0; i < count; i++) {
+        out[i] = moves[i];
     }
 
     return count;

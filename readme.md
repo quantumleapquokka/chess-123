@@ -4,3 +4,6 @@ Capture remove the other player's piece for the board.
 Both black and white can capture.
 Move generator for 20 moves to produce moves for current player seen in screenshot.
 Board screenshot also included in root.
+
+ADDED: rook, bishop, and queen movement
+Rooks go either up/down/accross and Bishops go diagonally on the same color they start as. Queens used the movement of rooks and bishops combined since they move up/down/accross and diagonally. Added generateAllMoves() for current side to play and updated move generation to have legal movement and captures.

@@ -41,6 +41,7 @@ public:
 
     Grid* getGrid() override { return _grid; }
     int moveGenerator(BitMove* out, int maxMoves);
+    std::vector<BitMove> generateAllMoves();
 
 private:
     Bit* PieceForPlayer(const int playerNumber, ChessPiece piece);
